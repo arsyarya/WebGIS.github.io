@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sawah Pintar WebGIS</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        :root {
+            --sidebar-width: 280px;
+            --sidebar-bg: #2c3e50;
+            --sidebar-text: white;
+            --header-height: 50px;
+            --control-panel-height: 60px;
+            --transition-speed: 0.3s;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Poppins', sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #map {
+            position: absolute;
+            top: var(--header-height);
+            bottom: 0;
+            width: 100%;
+            transition: all var(--transition-speed) ease;
+            z-index: 1;
+        }
+        
+        /* Header Styles */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: var(--header-height);
+            background-color: var(--sidebar-bg);
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            z-index: 1000;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 1.3em;
+            font-weight: 600;
+            flex-grow: 1;
+        }
+        
+        /* Sidebar Toggle Button */
+        .sidebar-toggle {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5em;
+            cursor: pointer;
+            padding: 5px;
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+        
+        .sidebar-toggle:hover {
+            transform: scale(1.1);
+        }
+        
+        /* Farm Selection in Header (Current Farm Name removed) */
+        .header-farm-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-farm-controls span {
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+        
+        .header-farm-controls select#farmSelector {
+            padding: 5px 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 0.85em;
+            background-color: white;
+            cursor: pointer;
+            color: #333;
+            /* No margin-right needed after removing currentFarmName span */
+        }
+        
+        /* #currentFarmName is removed from HTML, so this style is not strictly needed but kept for completeness in CSS */
+        #currentFarmName { 
+            font-size: 1.1em;
+            font-weight: 700;
+            color: white;
+            display: none; /* Ensure it's hidden if somehow still rendered */
+        }
+
+        /* Sidebar Styles */
+        .sidebar {
+            position: fixed;
+            top: var(--header-height);
+            right: -100%;
+            width: var(--sidebar-width);
+            height: calc(100vh - var(--header-height));
+            background-color: white;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+            transition: right var(--transition-speed) ease;
+            z-index: 900;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        
+        .sidebar.open {
+            right: 0;
+        }
+        
+        .sidebar-content {
+            padding: 15px;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+        
+        .sidebar-section {
+            margin-bottom: 20px;
+        }
+        
+        .sidebar-section h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: var(--sidebar-bg);
+            font-size: 1.1em;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        /* Overlay for when sidebar is open */
+        .sidebar-overlay {
+            position: fixed;
+            top: var(--header-height);
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0,0,0,0.3);
+            z-index: 800;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity var(--transition-speed), visibility var(--transition-speed);
+        }
+        
+        .sidebar-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        /* Control Panel Styles */
+        .control-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: var(--control-panel-height);
+            background-color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
+            z-index: 1000;
+            transition: all var(--transition-speed) ease;
+        }
+        
+        .control-panel.open {
+            right: var(--sidebar-width);
+        }
+        
+        .farm-navigation { /* Removed from here, moved to header */
+            display: none; 
+        }
+        
+        select#farmSelector {
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 0.9em;
+            max-width: 150px;
+        }
+        
+        /* Button Styles */
+        button {
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        button.delete-btn {
+            background-color: #e74c3c;
+            color: white;
+        }
+        
+        button.delete-btn:hover {
+            background-color: #c0392b;
+        }
+        
+        button.restore-btn {
+            background-color: #2ecc71;
+            color: white;
+            padding: 5px 10px;
+            font-size: 0.8em;
+        }
+        
+        button.restore-btn:hover {
+            background-color: #27ae60;
+        }
+        
+        /* Recommendation Summary */
+        .recommendation-summary {
+            font-size: 0.9em;
+        }
+        
+        .recommendation-item {
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        /* Deleted Points List */
+        .deleted-points-list {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            padding: 5px;
+        }
+        
+        .deleted-point {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 5px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .deleted-point:last-child {
+            border-bottom: none;
+        }
+        
+        /* Current Recommendation */
+        .current-recommendation {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        
+        /* Marker Styles */
+        .custom-div-icon {
+            text-align: center;
+        }
+        
+        .custom-div-icon div {
+            background-color: #4CAF50;
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.8em;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            border: 2px solid white;
+        }
+        
+        /* Responsive Adjustments */
+        @media (max-width: 768px) {
+            :root {
+                --sidebar-width: 85%;
+            }
+            
+            .control-panel {
+                flex-wrap: wrap;
+                height: auto;
+                padding: 10px;
+            }
+            
+            .farm-navigation {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            
+            select#farmSelector {
+                max-width: none;
+                flex-grow: 1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header with Toggle Button -->
+    <div class="header">
+        <button class="sidebar-toggle" id="sidebarToggle">
+            <span class="material-icons">menu</span>
+        </button>
+        <h1>Sawah Pintar WebGIS</h1>
+        <div class="header-farm-controls">
+            <span>Sawah:</span>
+            <select id="farmSelector"></select>
+            <!-- Removed <span id="currentFarmName">Sawah 1</span> as requested -->
+        </div>
+    </div>
+    
+    <!-- Map Container -->
+    <div id="map"></div>
+    
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-content">
+            <div class="sidebar-section">
+                <div class="current-recommendation" id="currentRecommendation">
+                    Klik marker untuk melihat rekomendasi titik
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Rekomendasi Tanaman</h3>
+                <div class="recommendation-summary" id="plantRecommendationSummary">
+                    <!-- This will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <h3>Titik yang Dihapus</h3>
+                <div class="deleted-points-list" id="deletedPointsList">
+                    <p>Tidak ada titik yang dihapus</p>
+                </div>
+            </div>
+            
+            <div class="sidebar-section">
+                <button class="delete-btn" id="deletePointBtn">
+                    <span class="material-icons">delete</span> Hapus Titik Terpilih
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Control Panel -->
+    <div class="control-panel" id="controlPanel">
+        <!-- Area Info removed as requested -->
+        <span id="pointCount">0</span> titik | Rekomendasi: <span id="mainRecommendation">-</span>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Inisialisasi peta
+        var map = L.map('map').setView([-6.200000, 106.816666], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 30,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        // API configuration
+        const apiKey = 'ZP41JBCS0C2IHSM7';
+        const channelID = '2650988';
+        const TOTAL_DATA_POINTS = 300;
+        const POINTS_PER_FARM = 30;
+
+        // Application state
+        let currentMarkers = [];
+        let currentPolyline;
+        let currentPolygon;
+        let mainRecommendationPopup = null; // Single instance for the main area recommendation popup
+        let allRawFeeds = []; // This will now consistently store the original, unfiltered feeds
+        let currentFarmData = []; // This will store the filtered and grouped data for the current farm
+        let currentFarmIndex = 0;
+        let farmNames = {};
+        let deletedPoints = {};
+        let currentClickedMarker = null;
+
+        // Recommendation rules (Removed "Kedelai")
+        const RecomRules = [
+            { tanaman: "Cabai", kelembaban_min: 71, kelembaban_max: 80, suhu_min: 10, suhu_max: 22, pH_min: 6.6, pH_max: 7.5 },
+            { tanaman: "Jagung", kelembaban_min: 40, kelembaban_max: 60, suhu_min: 28, suhu_max: 36, pH_min: 5.6, pH_max: 6.5 },
+            { tanaman: "Padi", kelembaban_min: 61, kelembaban_max: 70, suhu_min: 23, suhu_max: 27, pH_min: 5.6, pH_max: 6.5 },
+            { tanaman: "Kacang Tanah", kelembaban_min: 71, kelembaban_max: 80, suhu_min: 23, suhu_max: 27, pH_min: 6.6, pH_max: 7.5 },
+            { tanaman: "Semangka", kelembaban_min: 61, kelembaban_max: 70, suhu_min: 23, suhu_max: 37, pH_min: 5.6, pH_max: 6.5 }
+        ];
+        const JUMLAH_RecomRule = RecomRules.length;
+
+        // Load saved data from localStorage
+        function loadFromLocalStorage() {
+            const savedDeletedPoints = localStorage.getItem('deletedPoints');
+            if (savedDeletedPoints) {
+                deletedPoints = JSON.parse(savedDeletedPoints);
+            }
+            
+            const savedFarmNames = localStorage.getItem('farmNames');
+            if (savedFarmNames) {
+                farmNames = JSON.parse(savedFarmNames);
+            }
+        }
+
+        // Save data to localStorage
+        function saveToLocalStorage() {
+            localStorage.setItem('deletedPoints', JSON.stringify(deletedPoints));
+            localStorage.setItem('farmNames', JSON.stringify(farmNames));
+        }
+
+        // Toggle sidebar visibility
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            const controlPanel = document.getElementById('controlPanel');
+            
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('active');
+            controlPanel.classList.toggle('open');
+        }
+
+        // Close sidebar when clicking outside
+        document.getElementById('sidebarOverlay').addEventListener('click', toggleSidebar);
+
+        // Toggle button event
+        document.getElementById('sidebarToggle').addEventListener('click', toggleSidebar);
+
+        // Calculate score for recommendation (for weighted scoring method)
+        function hitungSkor(nilai, min, max) {
+            if (isNaN(nilai) || isNaN(min) || isNaN(max)) return 0;
+            const tengah = (min + max) / 2.0;
+            return 1.0 / (1.0 + Math.abs(nilai - tengah));
+        }
+
+        // Check if value is within range
+        function dalamRentang(nilai, min, max) {
+            return nilai >= min && nilai <= max;
+        }
+
+        // Helper function to calculate recommendation counts from an array of recommendations
+        function calculateRecommendationCounts(recommendationsArray) {
+            const counts = {};
+            recommendationsArray.forEach(rec => {
+                counts[rec] = (counts[rec] || 0) + 1;
+            });
+            return counts;
+        }
+
+        // Helper function to find the most frequent recommendation
+        function calculateMostFrequentRecommendation(recommendationsArray) {
+            const counts = calculateRecommendationCounts(recommendationsArray);
+            
+            let mostFrequent = "N/A";
+            let maxCount = 0;
+            for (const rec in counts) {
+                if (counts[rec] > maxCount && !["Tidak ada rekomendasi", "Data sensor tidak lengkap/valid", "Tidak cocok"].includes(rec)) {
+                    maxCount = counts[rec];
+                    mostFrequent = rec;
+                }
+            }
+            return mostFrequent;
+        }
+
+
+        // Get plant recommendation based on sensor data using Weighted Scoring (fallback method)
+        function getRekomendasiTanamanWightScoring(kelembaban, suhu, pH) {
+            let skorTertinggi = -1;
+            let rekomendasi = "Tidak cocok"; // Default jika tidak ada yang cocok
+            let foundValidRule = false;
+
+            const scores = [];
+
+            for (let i = 0; i < JUMLAH_RecomRule; i++) {
+                const rule = RecomRules[i];
+                const isMoistureValid = dalamRentang(kelembaban, rule.kelembaban_min, rule.kelembaban_max);
+                const isSuhuValid = dalamRentang(suhu, rule.suhu_min, rule.suhu_max);
+                const isPHValid = dalamRentang(pH, rule.pH_min, rule.pH_max);
+
+                if (isMoistureValid && isSuhuValid && isPHValid) {
+                    const skor_k = hitungSkor(kelembaban, rule.kelembaban_min, rule.kelembaban_max);
+                    const skor_s = hitungSkor(suhu, rule.suhu_min, rule.suhu_max);
+                    const skor_p = hitungSkor(pH, rule.pH_min, rule.pH_max);
+                    const totalSkor = skor_k + skor_s + skor_p;
+                    scores[i] = totalSkor;
+                    foundValidRule = true;
+                    
+                    if (totalSkor > skorTertinggi) {
+                        skorTertinggi = totalSkor;
+                        rekomendasi = rule.tanaman;
+                    }
+                } else {
+                    scores[i] = 0;
+                }
+            }
+
+            if (!foundValidRule) {
+                return "Tidak cocok";
+            }
+            
+            const topRecommendations = [];
+            for (let i = 0; i < JUMLAH_RecomRule; i++) {
+                if (scores[i] > 0 && Math.abs(scores[i] - skorTertinggi) < 0.001) {
+                    topRecommendations.push(RecomRules[i].tanaman);
+                }
+            }
+
+            if (topRecommendations.length === 1) {
+                return topRecommendations[0];
+            } else if (topRecommendations.length > 1) {
+                return topRecommendations.join(" / "); // Jika ada beberapa dengan skor tertinggi
+            } else {
+                return "Tidak cocok";
+            }
+        }
+
+        // Main recommendation function: Tries IF-ELSE first, then falls back to Weighted Scoring
+        function getRekomendasiTanamanFinal(kelembaban, suhu, pH) {
+            // Convert to int for IF-ELSE matching as per provided C++ code
+            const k_int = Math.round(kelembaban);
+            const s_int = Math.round(suhu);
+            
+            // Try IF-ELSE conditions first (Removed "Kedelai" logic)
+            if (k_int >= 71 && k_int <= 80 && s_int >= 10 && s_int <= 22 && pH >= 6.6 && pH <= 7.5) {
+                return "Cabai";
+            } else if (k_int >= 40 && k_int <= 60 && s_int >= 28 && s_int <= 36 && pH >= 5.6 && pH <= 6.5) {
+                return "Jagung";
+            } else if (k_int >= 61 && k_int <= 70 && s_int >= 23 && s_int <= 27 && pH >= 5.6 && pH <= 6.5) {
+                return "Padi";
+            } else if (k_int >= 71 && k_int <= 80 && s_int >= 23 && s_int <= 27 && pH >= 6.6 && pH <= 7.5) {
+                return "Kacang Tanah";
+            } else if (k_int >= 61 && k_int <= 70 && s_int >= 23 && s_int <= 37 && pH >= 5.6 && pH >= 6.5) { // Fixed pH range here
+                return "Semangka";
+            } else {
+                // If no IF-ELSE condition matches, fall back to Weighted Scoring
+                return getRekomendasiTanamanWightScoring(kelembaban, suhu, pH);
+            }
+        }
+
+
+        // Fetch data from API
+        async function fetchAndGroupData() {
+            try {
+                const url = `https://api.thingspeak.com/channels/${channelID}/feeds.json?api_key=${apiKey}&results=${TOTAL_DATA_POINTS}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.feeds && data.feeds.length > 0) {
+                    allRawFeeds = data.feeds; // Store the original, unfiltered feeds
+                    groupRawFeedsIntoFarms(); // This function will now correctly filter based on 'deletedPoints'
+                    populateFarmSelector();
+                    displayFarm(currentFarmIndex);
+                } else {
+                    throw new Error("No data from API, using dummy data.");
+                }
+            } catch (error) {
+                console.error("Error fetching data:", error);
+                // Fallback to dummy data
+                allRawFeeds = generateDummyData(TOTAL_DATA_POINTS); // Store dummy data as original feeds
+                groupRawFeedsIntoFarms(); // This function will now correctly filter based on 'deletedPoints'
+                populateFarmSelector();
+                displayFarm(currentFarmIndex);
+            }
+            // Ensure deleted points list is updated after (re)fetching data
+            updateDeletedPointsList(); 
+        }
+
+        // Helper function to group raw feeds into farms, respecting deleted points
+        function groupRawFeedsIntoFarms() {
+            currentFarmData = []; // Reset currentFarmData which will hold the filtered/grouped data
+
+            // Filter out deleted points from the original raw feeds
+            const activeRawFeeds = allRawFeeds.filter((feed, index) => {
+                return !deletedPoints[index]; 
+            });
+
+            // Group filtered feeds into farms
+            for (let i = 0; i < activeRawFeeds.length; i += POINTS_PER_FARM) {
+                const farmSlice = activeRawFeeds.slice(i, i + POINTS_PER_FARM);
+                currentFarmData.push(farmSlice);
+            }
+            
+            // Re-initialize farm names, assuming "Sawah X" if not custom-named
+            const oldFarmNames = { ...farmNames };
+            farmNames = {};
+            for (let i = 0; i < currentFarmData.length; i++) {
+                farmNames[i] = oldFarmNames[i] || `Sawah ${i + 1}`;
+            }
+        }
+
+
+        // Generate dummy data for testing
+        function generateDummyData(count) {
+            const dummyData = [];
+            const baseLat = -6.200000;
+            const baseLng = 106.816666;
+
+            for (let i = 0; i < count; i++) {
+                const lat = (baseLat + (Math.random() - 0.5) * 0.05).toFixed(6);
+                const lng = (baseLng + (Math.random() - 0.5) * 0.05).toFixed(6);
+                
+                const profile = i % RecomRules.length; // Use RecomRules length for profile variation
+                const rule = RecomRules[profile];
+
+                // Generate data within a range close to the rule's ideal, with some variation
+                const moisture = (Math.random() * (rule.kelembaban_max - rule.kelembaban_min) + rule.kelembaban_min).toFixed(2);
+                const suhu = (Math.random() * (rule.suhu_max - rule.suhu_min) + rule.suhu_min).toFixed(2);
+                const pH = (Math.random() * (rule.pH_max - rule.pH_min) + rule.pH_min).toFixed(2);
+                
+                const kesuburan = (Math.random() * (90 - 50) + 50).toFixed(2); 
+
+                dummyData.push({
+                    field1: lat,
+                    field2: lng,
+                    field3: moisture,
+                    field4: suhu,
+                    field5: pH,
+                    field6: kesuburan
+                });
+            }
+            return dummyData;
+        }
+
+        // Display farm data on map
+        function displayFarm(farmIndex) {
+            clearMapLayers();
+            currentFarmIndex = farmIndex;
+            // Removed updating currentFarmName text as requested
+            // document.getElementById('currentFarmName').innerText = farmNames[currentFarmIndex];
+
+            const feeds = currentFarmData[farmIndex] || []; // Use currentFarmData (already filtered)
+            const latLngs = [];
+            const allRecommendations = []; 
+            const pointRecommendations = {}; 
+            
+            feeds.forEach((feed, index) => { 
+                const lat = parseFloat(feed.field1);
+                const lng = parseFloat(feed.field2);
+                
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    latLngs.push(L.latLng(lat, lng));
+
+                    const moisture = parseFloat(feed.field3);
+                    const suhu = parseFloat(feed.field4);
+                    const pH = parseFloat(feed.field5);
+                    const kesuburan = parseFloat(feed.field6); // Pastikan ini sudah di-parse sebagai float
+
+                    const rekomendasiTanaman = getRekomendasiTanamanFinal(moisture, suhu, pH); 
+                    allRecommendations.push(rekomendasiTanaman);
+                    
+                    // The globalIndex here refers to the index within the original 'allRawFeeds'
+                    // We need to find its original index for `deletedPoints` map
+                    const originalGlobalIndex = allRawFeeds.findIndex(rawFeed => 
+                        rawFeed.field1 === feed.field1 && 
+                        rawFeed.field2 === feed.field2 && 
+                        rawFeed.field3 === feed.field3 && 
+                        rawFeed.field4 === feed.field4 && 
+                        rawFeed.field5 === feed.field5 && 
+                        rawFeed.field6 === feed.field6
+                    );
+                    pointRecommendations[originalGlobalIndex] = rekomendasiTanaman;
+
+                    const label = index + 1; // Local point number (1-30) for current active feeds
+                    const icon = L.divIcon({
+                        className: 'custom-div-icon',
+                        html: `<div style="background-color:#4CAF50; border-radius:50%; width:26px; height:26px; display:flex; align-items:center; justify-content:center; color:white; font-weight:bold;">${label}</div>`,
+                        iconSize: [26, 26],
+                        iconAnchor: [13, 13]
+                    });
+
+                    const marker = L.marker([lat, lng], { 
+                        icon: icon,
+                        globalIndex: originalGlobalIndex, // Store the original global index
+                        localIndex: index
+                    }).addTo(map);
+                    
+                    // Popup data formatting as requested
+                    marker.bindPopup(`
+                        <b>Titik: ${label}</b><br>
+                        Suhu: ${parseFloat(suhu).toFixed(1)}°C<br> <!-- Formatted to 1 decimal place without rounding -->
+                        Kelembaban: ${Math.round(moisture)}%<br> 
+                        pH: ${pH.toFixed(1)}<br> 
+                        Latitude: ${lat.toFixed(6)}<br>
+                        Longitude: ${lng.toFixed(6)}<br>
+                        Nilai Kesuburan: ${parseFloat(kesuburan).toFixed(2)} <!-- Formatted to 2 decimal places without rounding -->
+                    `);
+                    
+                    marker.on('click', function() {
+                        currentClickedMarker = this;
+                        // Update the sidebar 'currentRecommendation' based on the clicked marker's data
+                        document.getElementById('currentRecommendation').innerHTML = 
+                            `Rekomendasi Titik: <strong>${rekomendasiTanaman}</strong>`;
+                        
+                        // Enable delete button if a marker is selected
+                        document.getElementById('deletePointBtn').disabled = false;
+
+                        // Hide main recommendation popup when a marker is clicked
+                        if (mainRecommendationPopup && map.hasLayer(mainRecommendationPopup)) {
+                            map.removeLayer(mainRecommendationPopup);
+                        }
+                    });
+                    
+                    // Tampilkan kembali popup rekomendasi utama saat popup marker ditutup
+                    marker.on('popupclose', function() {
+                        currentClickedMarker = null; // Clear clicked marker when popup closes
+                        document.getElementById('deletePointBtn').disabled = true; // Disable delete button
+                        document.getElementById('currentRecommendation').innerHTML = 'Klik marker untuk melihat rekomendasi titik';
+
+                        if (currentPolygon) { 
+                            const mostFrequentRecommendation = calculateMostFrequentRecommendation(allRecommendations);
+                            // Only show main popup if no other marker popup is open
+                            if (!currentMarkers.some(m => m.isPopupOpen()) && mostFrequentRecommendation !== "N/A") {
+                                showMainRecommendationPopup(mostFrequentRecommendation, currentPolygon.getBounds().getCenter());
+                            }
+                        }
+                    });
+
+                    currentMarkers.push(marker);
+                }
+            });
+
+            document.getElementById('pointCount').innerText = `${latLngs.length}`;
+            updatePlantRecommendationSummary(pointRecommendations); // Update the detailed summary
+
+            // Calculate main recommendation for the entire farm
+            const recommendationCountsOverall = {};
+            allRecommendations.forEach(rec => {
+                recommendationCountsOverall[rec] = (recommendationCountsOverall[rec] || 0) + 1;
+            });
+
+            let mostFrequentRecommendation = "N/A";
+            let maxCount = 0;
+            for (const rec in recommendationCountsOverall) {
+                if (recommendationCountsOverall[rec] > maxCount && rec !== "Tidak cocok") {
+                    maxCount = recommendationCountsOverall[rec];
+                    mostFrequentRecommendation = rec;
+                }
+            }
+            document.getElementById('mainRecommendation').innerText = mostFrequentRecommendation;
+
+            if (latLngs.length > 2) {
+                // Ensure polygon is closed for proper display
+                if (latLngs[0].lat !== latLngs[latLngs.length - 1].lat || 
+                    latLngs[0].lng !== latLngs[latLngs.length - 1].lng) {
+                    latLngs.push(L.latLng(latLngs[0].lat, latLngs[0].lng));
+                }
+                currentPolyline = L.polyline(latLngs, { color: 'blue', weight: 3 }).addTo(map);
+                currentPolygon = L.polygon(latLngs, { fillColor: '#3388ff', fillOpacity: 0.2, weight: 2 }).addTo(map);                
+                map.fitBounds(currentPolygon.getBounds());
+                
+                // Show main recommendation popup on initial load/display of the farm
+                if (mostFrequentRecommendation !== "N/A") {
+                    showMainRecommendationPopup(mostFrequentRecommendation, currentPolygon.getBounds().getCenter());
+                }
+
+                // Add click listener to the polygon to re-show main recommendation popup
+                currentPolygon.on('click', function() {
+                    // Only show if no marker popup is open and main popup is not already visible
+                    if (!currentMarkers.some(m => m.isPopupOpen()) && !map.hasLayer(mainRecommendationPopup)) {
+                        const mostFrequentRecommendationForPolygon = calculateMostFrequentRecommendation(allRecommendations);
+                        if (mostFrequentRecommendationForPolygon !== "N/A") {
+                            showMainRecommendationPopup(mostFrequentRecommendationForPolygon, currentPolygon.getBounds().getCenter());
+                        }
+                    }
+                });
+
+            } else {
+                 document.getElementById('mainRecommendation').innerText = "Tidak ada polygon";
+            }
+        }
+
+        // Update plant recommendation summary in sidebar
+        function updatePlantRecommendationSummary(pointRecommendations) {
+            const summary = {};
+            let totalPoints = 0;
+
+            // Count recommendations from active points
+            for (const globalIndex in pointRecommendations) {
+                const rec = pointRecommendations[globalIndex];
+                summary[rec] = (summary[rec] || 0) + 1;
+                totalPoints++;
+            }
+
+            // Create HTML for summary
+            let html = '';
+            const sortedPlants = Object.keys(summary).sort(); 
+            if (sortedPlants.length === 0) {
+                html = '<div>Tidak ada data rekomendasi</div>';
+            } else {
+                for (const plant of sortedPlants) {
+                    if (plant !== "Tidak cocok" && plant !== "Tidak ada rekomendasi" && plant !== "Data sensor tidak lengkap/valid") {
+                        const count = summary[plant];
+                        const percentage = totalPoints > 0 ? ((count / totalPoints) * 100).toFixed(1) : 0;
+                        html += `<div class="recommendation-item"><span>${plant}</span> <span>${count} titik (${percentage}%)</span></div>`;
+                    }
+                }
+            }
+            document.getElementById('plantRecommendationSummary').innerHTML = html;
+        }
+
+        // Clear all map layers
+        function clearMapLayers() {
+            currentMarkers.forEach(marker => map.removeLayer(marker));
+            currentMarkers = [];
+            if (currentPolyline) {
+                map.removeLayer(currentPolyline);
+                currentPolyline = null;
+            }
+            if (currentPolygon) {
+                map.removeLayer(currentPolygon);
+                currentPolygon = null;
+            }
+            // If the main recommendation popup exists and is on the map, remove it
+            if (mainRecommendationPopup && map.hasLayer(mainRecommendationPopup)) { 
+                map.removeLayer(mainRecommendationPopup);
+            }
+            // Do NOT set mainRecommendationPopup to null here; it's a persistent instance.
+            currentClickedMarker = null; 
+            document.getElementById('deletePointBtn').disabled = true; 
+            document.getElementById('currentRecommendation').innerHTML = 'Klik marker untuk melihat rekomendasi titik';
+        }
+
+        // Show main recommendation popup
+        function showMainRecommendationPopup(recommendation, centerLatLng) {
+            // Create the popup instance once if it doesn't exist
+            if (!mainRecommendationPopup) {
+                mainRecommendationPopup = L.popup({ className: 'main-reco-popup', closeButton: false, autoClose: false });
+            }
+
+            // Only update and open if a valid recommendation exists
+            if (recommendation && recommendation !== "N/A" && recommendation !== "Tidak cocok") {
+                mainRecommendationPopup.setLatLng(centerLatLng)
+                                     .setContent(`Rekomendasi Area:<br>${recommendation}`);
+                if (!map.hasLayer(mainRecommendationPopup)) {
+                    mainRecommendationPopup.openOn(map);
+                }
+            } else {
+                // If no valid recommendation, ensure the popup is closed if it's open
+                if (map.hasLayer(mainRecommendationPopup)) {
+                    map.removeLayer(mainRecommendationPopup);
+                }
+            }
+        }
+
+        // Populate farm selector dropdown
+        function populateFarmSelector() {
+            const farmSelector = document.getElementById('farmSelector');
+            farmSelector.innerHTML = '';
+            if (currentFarmData.length === 0) {
+                const option = document.createElement('option');
+                option.value = "";
+                option.innerText = "Tidak Ada Sawah";
+                farmSelector.appendChild(option);
+                farmSelector.disabled = true;
+                return;
+            }
+            farmSelector.disabled = false;
+
+            for (let i = 0; i < currentFarmData.length; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.innerText = farmNames[i];
+                farmSelector.appendChild(option);
+            }
+            farmSelector.value = currentFarmIndex; 
+        }
+
+        // Update deleted points list in sidebar
+        function updateDeletedPointsList() {
+            const deletedPointsListDiv = document.getElementById('deletedPointsList');
+            deletedPointsListDiv.innerHTML = '';
+
+            let hasDeletedPoints = false;
+            // Iterate through all possible global indexes from the original `allRawFeeds`
+            for (let globalIndex = 0; globalIndex < allRawFeeds.length; globalIndex++) {
+                if (deletedPoints[globalIndex]) {
+                    hasDeletedPoints = true;
+                    const originalFarmIndex = Math.floor(globalIndex / POINTS_PER_FARM);
+                    const originalLocalIndex = globalIndex % POINTS_PER_FARM;
+                    
+                    const pointDiv = document.createElement('div');
+                    pointDiv.className = 'deleted-point';
+                    pointDiv.innerHTML = `
+                        <span>Titik ${originalLocalIndex + 1} (Sawah ${originalFarmIndex + 1})</span>
+                        <button class="restore-btn" data-index="${globalIndex}">
+                            <span class="material-icons" style="font-size:16px">undo</span> Kembalikan
+                        </button>
+                    `;
+                    deletedPointsListDiv.appendChild(pointDiv);
+                }
+            }
+
+            if (!hasDeletedPoints) {
+                deletedPointsListDiv.innerHTML = '<p>Tidak ada titik yang dihapus</p>';
+            }
+
+            // Add event listeners to restore buttons
+            document.querySelectorAll('.restore-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const globalIndex = parseInt(this.getAttribute('data-index'));
+                    restorePoint(globalIndex);
+                });
+            });
+        }
+
+        // Delete a point
+        function deletePoint() {
+            if (!currentClickedMarker) {
+                document.getElementById('currentRecommendation').innerHTML = '<strong>Peringatan:</strong> Silakan klik titik yang ingin dihapus terlebih dahulu.';
+                return;
+            }
+
+            const globalIndex = currentClickedMarker.options.globalIndex;
+            deletedPoints[globalIndex] = true;
+            saveToLocalStorage();
+            
+            map.closePopup();
+
+            // Re-group and re-display current farm to reflect deletion
+            groupRawFeedsIntoFarms();
+            if (currentFarmIndex >= currentFarmData.length && currentFarmData.length > 0) {
+                currentFarmIndex = currentFarmData.length - 1;
+            } else if (currentFarmData.length === 0) {
+                currentFarmIndex = 0;
+            }
+            populateFarmSelector();
+            displayFarm(currentFarmIndex);
+            updateDeletedPointsList();
+            currentClickedMarker = null; 
+            document.getElementById('deletePointBtn').disabled = true;
+        }
+
+        // Restore a deleted point
+        function restorePoint(globalIndex) {
+            delete deletedPoints[globalIndex];
+            saveToLocalStorage();
+            
+            // Re-group and re-display current farm to reflect restoration
+            groupRawFeedsIntoFarms();
+            populateFarmSelector();
+            displayFarm(currentFarmIndex);
+            updateDeletedPointsList();
+        }
+
+        // Initialize the application
+        function init() {
+            loadFromLocalStorage();
+            fetchAndGroupData();
+
+            // Event listeners
+            document.getElementById('farmSelector').addEventListener('change', function() {
+                const selectedFarmIndex = parseInt(this.value);
+                displayFarm(selectedFarmIndex);
+            });
+            
+            document.getElementById('deletePointBtn').addEventListener('click', deletePoint);
+            document.getElementById('sidebarToggle').addEventListener('click', toggleSidebar);
+            document.getElementById('sidebarOverlay').addEventListener('click', toggleSidebar);
+
+            // Click event on map to clear current marker selection (if any)
+            map.on('click', function() {
+                currentClickedMarker = null;
+                document.getElementById('deletePointBtn').disabled = true; 
+                document.getElementById('currentRecommendation').innerHTML = 'Klik marker untuk melihat rekomendasi titik';
+                
+                // Hide main recommendation popup if clicked on empty map area
+                if (mainRecommendationPopup && map.hasLayer(mainRecommendationPopup)) {
+                    map.removeLayer(mainRecommendationPopup);
+                }
+            });
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>
